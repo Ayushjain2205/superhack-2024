@@ -1,9 +1,12 @@
 import React, { useState } from "react";
-import { EAS, SchemaEncoder } from "@ethereum-attestation-service/eas-sdk";
+import { SchemaRegistry } from "@ethereum-attestation-service/eas-sdk";
 import { ethers } from "ethers";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
+
+const SchemaRegistryContractAddress =
+  "0x4200000000000000000000000000000000000020"; // Sepolia 0.26
 
 const EASSchemaDeployer = () => {
   const [schemaString, setSchemaString] = useState("");
@@ -11,42 +14,37 @@ const EASSchemaDeployer = () => {
   const [revocable, setRevocable] = useState(true);
   const [isDeploying, setIsDeploying] = useState(false);
   const [deploymentStatus, setDeploymentStatus] = useState(null);
-  const [deployedSchemaUID, setDeployedSchemaUID] = useState("");
 
   const deploySchema = async () => {
     setIsDeploying(true);
     setDeploymentStatus(null);
-    setDeployedSchemaUID("");
 
     try {
-      // Connect to the Ethereum network (replace with your preferred method)
-      const provider = new ethers.providers.Web3Provider(window.ethereum);
-      const signer = provider.getSigner();
+      if (!window.ethereum) {
+        throw new Error("No Ethereum provider found. Please install MetaMask.");
+      }
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const signer = await provider.getSigner();
 
-      // EAS contract address (replace with the correct address for your network)
-      const EAS_CONTRACT_ADDRESS = "0xC2679fBD37d54388Ce493F1DB75320D236e1815e"; // Sepolia testnet
+      const schemaRegistry = new SchemaRegistry(SchemaRegistryContractAddress);
+      schemaRegistry.connect(signer);
 
-      // Initialize the EAS SDK
-      const eas = new EAS(EAS_CONTRACT_ADDRESS);
-      eas.connect(signer);
+      console.log("Deploying schema:", schemaString);
+      console.log("Resolver address:", resolverAddress || ethers.ZeroAddress);
+      console.log("Revocable:", revocable);
 
-      // Create a SchemaEncoder instance
-      const schemaEncoder = new SchemaEncoder(schemaString);
-
-      // Register the schema
-      const transaction = await eas.registerSchema(
-        schemaString,
-        resolverAddress,
+      const transaction = await schemaRegistry.register({
+        schema: schemaString,
+        resolverAddress: resolverAddress || ethers.ZeroAddress,
         revocable,
-        schemaEncoder.encodeSchema()
-      );
+      });
+
+      console.log("Transaction:", transaction);
+      console.log("Transaction hash:", transaction.hash);
 
       const receipt = await transaction.wait();
+      console.log("Transaction receipt:", receipt);
 
-      // Get the SchemaUID from the transaction receipt
-      const schemaUID = receipt.events[0].args.uid;
-
-      setDeployedSchemaUID(schemaUID);
       setDeploymentStatus("success");
     } catch (error) {
       console.error("Error deploying schema:", error);
@@ -61,7 +59,7 @@ const EASSchemaDeployer = () => {
       <h1 className="text-2xl font-bold">EAS Schema Deployer</h1>
 
       <Input
-        placeholder="Schema string (e.g., 'uint256 eventId,uint8 voteIndex')"
+        placeholder="Schema string (e.g., 'uint256 eventId, uint8 voteIndex')"
         value={schemaString}
         onChange={(e) => setSchemaString(e.target.value)}
       />
@@ -87,12 +85,10 @@ const EASSchemaDeployer = () => {
       </Button>
 
       {deploymentStatus === "success" && (
-        <Alert variant="success">
+        <Alert>
           <AlertTitle>Success</AlertTitle>
           <AlertDescription>
-            EAS schema deployed successfully!
-            <br />
-            Schema UID: {deployedSchemaUID}
+            EAS schema deployed successfully! Check the console for details.
           </AlertDescription>
         </Alert>
       )}
