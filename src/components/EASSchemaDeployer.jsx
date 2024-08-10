@@ -6,18 +6,20 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
 
 const SchemaRegistryContractAddress =
-  "0x4200000000000000000000000000000000000020"; // Sepolia 0.26
+  "0x0a7E2Ff54e76B8E6659aedc9103FB21c038050D0"; // Sepolia 0.26
 
 const EASSchemaDeployer = () => {
   const [schemaString, setSchemaString] = useState("");
   const [resolverAddress, setResolverAddress] = useState("");
   const [revocable, setRevocable] = useState(true);
-  const [isDeploying, setIsDeploying] = useState(false);
-  const [deploymentStatus, setDeploymentStatus] = useState(null);
+  const [deploymentState, setDeploymentState] = useState("idle"); // 'idle', 'deploying', 'success', 'error'
+  const [transactionHash, setTransactionHash] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
 
   const deploySchema = async () => {
-    setIsDeploying(true);
-    setDeploymentStatus(null);
+    setDeploymentState("deploying");
+    setTransactionHash("");
+    setErrorMessage("");
 
     try {
       if (!window.ethereum) {
@@ -29,10 +31,6 @@ const EASSchemaDeployer = () => {
       const schemaRegistry = new SchemaRegistry(SchemaRegistryContractAddress);
       schemaRegistry.connect(signer);
 
-      console.log("Deploying schema:", schemaString);
-      console.log("Resolver address:", resolverAddress || ethers.ZeroAddress);
-      console.log("Revocable:", revocable);
-
       const transaction = await schemaRegistry.register({
         schema: schemaString,
         resolverAddress: resolverAddress || ethers.ZeroAddress,
@@ -42,15 +40,16 @@ const EASSchemaDeployer = () => {
       console.log("Transaction:", transaction);
       console.log("Transaction hash:", transaction.hash);
 
+      console.log("Waiting for transaction confirmation...");
       const receipt = await transaction.wait();
-      console.log("Transaction receipt:", receipt);
+      console.log("Transaction receipt:");
+      setTransactionHash(receipt);
 
-      setDeploymentStatus("success");
+      setDeploymentState("success");
     } catch (error) {
       console.error("Error deploying schema:", error);
-      setDeploymentStatus("error");
-    } finally {
-      setIsDeploying(false);
+      setDeploymentState("error");
+      setErrorMessage(error.message || "An unknown error occurred");
     }
   };
 
@@ -80,25 +79,45 @@ const EASSchemaDeployer = () => {
         <label htmlFor="revocable">Revocable</label>
       </div>
 
-      <Button onClick={deploySchema} disabled={isDeploying || !schemaString}>
-        {isDeploying ? "Deploying..." : "Deploy EAS Schema"}
+      <Button
+        onClick={deploySchema}
+        disabled={deploymentState === "deploying" || !schemaString}
+      >
+        {deploymentState === "deploying" ? "Deploying..." : "Deploy EAS Schema"}
       </Button>
 
-      {deploymentStatus === "success" && (
+      {deploymentState === "deploying" && (
         <Alert>
-          <AlertTitle>Success</AlertTitle>
+          <AlertTitle>Deploying</AlertTitle>
           <AlertDescription>
-            EAS schema deployed successfully! Check the console for details.
+            Deploying your schema. This may take a few moments...
           </AlertDescription>
         </Alert>
       )}
 
-      {deploymentStatus === "error" && (
+      {deploymentState === "success" && (
+        <Alert>
+          <AlertTitle>Success</AlertTitle>
+          <AlertDescription>
+            EAS schema deployed successfully!
+            <div className="mt-2">
+              <a
+                href={`https://sepolia.easscan.org/schema/view/${transactionHash}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-500 hover:underline"
+              >
+                View on EAS Scan
+              </a>
+            </div>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {deploymentState === "error" && (
         <Alert variant="destructive">
           <AlertTitle>Error</AlertTitle>
-          <AlertDescription>
-            Failed to deploy EAS schema. Check the console for more details.
-          </AlertDescription>
+          <AlertDescription>{errorMessage}</AlertDescription>
         </Alert>
       )}
     </div>
