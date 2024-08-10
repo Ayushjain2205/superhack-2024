@@ -5,16 +5,18 @@ import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 
 const SchemaRegistryContractAddress =
   "0x0a7E2Ff54e76B8E6659aedc9103FB21c038050D0"; // Sepolia 0.26
 
 const EASSchemaGenerator = () => {
   const [schemaDescription, setSchemaDescription] = useState("");
-  const [generatedSchema, setGeneratedSchema] = useState("");
+  const [generatedFields, setGeneratedFields] = useState([]);
   const [resolverAddress, setResolverAddress] = useState("");
   const [revocable, setRevocable] = useState(true);
-  const [deploymentState, setDeploymentState] = useState("idle"); // 'idle', 'generating', 'preview', 'deploying', 'success', 'error'
+  const [step, setStep] = useState("generate"); // 'generate', 'deploy'
+  const [deploymentState, setDeploymentState] = useState("idle");
   const [transactionHash, setTransactionHash] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
 
@@ -23,8 +25,9 @@ const EASSchemaGenerator = () => {
     try {
       // This is a mock API call. Replace with actual GPT API call in production.
       const response = await mockGPTAPICall(schemaDescription);
-      setGeneratedSchema(response);
-      setDeploymentState("preview");
+      setGeneratedFields(response);
+      setDeploymentState("idle");
+      setStep("deploy");
     } catch (error) {
       console.error("Error generating schema:", error);
       setDeploymentState("error");
@@ -47,8 +50,12 @@ const EASSchemaGenerator = () => {
       const schemaRegistry = new SchemaRegistry(SchemaRegistryContractAddress);
       schemaRegistry.connect(signer);
 
+      const schemaString = generatedFields
+        .map((field) => `${field.type} ${field.name}`)
+        .join(", ");
+
       const transaction = await schemaRegistry.register({
-        schema: generatedSchema,
+        schema: schemaString,
         resolverAddress: resolverAddress || ethers.ZeroAddress,
         revocable,
       });
@@ -60,7 +67,7 @@ const EASSchemaGenerator = () => {
       console.log("Waiting for transaction confirmation...");
       const receipt = await transaction.wait();
       console.log("Transaction receipt:", receipt);
-      setTransactionHash(receipt);
+      setTransactionHash(receipt.transactionHash);
 
       setDeploymentState("success");
     } catch (error) {
@@ -74,52 +81,61 @@ const EASSchemaGenerator = () => {
   const mockGPTAPICall = async (description) => {
     await new Promise((resolve) => setTimeout(resolve, 1000)); // Simulate API delay
     // This is a simplistic mock. A real GPT model would provide more sophisticated responses.
-    const fields = description.split(" ").map((word) => {
-      const type = Math.random() > 0.5 ? "uint256" : "string";
-      return `${type} ${word.toLowerCase()}`;
-    });
-    return fields.join(", ");
+    return description.split(" ").map((word) => ({
+      name: word.toLowerCase(),
+      type: Math.random() > 0.5 ? "uint256" : "string",
+    }));
   };
 
   return (
-    <div className="p-4 space-y-4">
-      <h1 className="text-2xl font-bold">EAS Schema Generator and Deployer</h1>
+    <div className="p-4 space-y-4 max-w-md mx-auto">
+      <h1 className="text-2xl font-bold text-center">
+        EAS Schema Generator and Deployer
+      </h1>
 
-      <Textarea
-        placeholder="Describe what you're generating a schema for..."
-        value={schemaDescription}
-        onChange={(e) => setSchemaDescription(e.target.value)}
-        disabled={deploymentState !== "idle" && deploymentState !== "preview"}
-      />
+      {step === "generate" && (
+        <>
+          <Textarea
+            placeholder="Describe what you're generating a schema for..."
+            value={schemaDescription}
+            onChange={(e) => setSchemaDescription(e.target.value)}
+            disabled={deploymentState === "generating"}
+            className="w-full"
+          />
 
-      <Button
-        onClick={generateSchema}
-        disabled={
-          (deploymentState !== "idle" && deploymentState !== "preview") ||
-          !schemaDescription
-        }
-      >
-        Generate Schema
-      </Button>
-
-      {deploymentState === "generating" && (
-        <Alert>
-          <AlertTitle>Generating Schema</AlertTitle>
-          <AlertDescription>
-            Generating your schema based on the description. This may take a
-            moment...
-          </AlertDescription>
-        </Alert>
+          <Button
+            onClick={generateSchema}
+            disabled={deploymentState === "generating" || !schemaDescription}
+            className="w-full"
+          >
+            {deploymentState === "generating"
+              ? "Generating..."
+              : "Generate Schema"}
+          </Button>
+        </>
       )}
 
-      {deploymentState === "preview" && (
-        <div className="space-y-4">
-          <Alert>
-            <AlertTitle>Generated Schema Preview</AlertTitle>
-            <AlertDescription>
-              <pre className="mt-2 whitespace-pre-wrap">{generatedSchema}</pre>
-            </AlertDescription>
-          </Alert>
+      {step === "deploy" && (
+        <div className="space-y-4 bg-gray-100 p-4 rounded-lg">
+          {generatedFields.map((field, index) => (
+            <div key={index} className="flex justify-between">
+              <div className="w-1/2 pr-2">
+                <Input value={field.name} readOnly />
+              </div>
+              <div className="w-1/2 pl-2">
+                <Input value={field.type} readOnly />
+              </div>
+            </div>
+          ))}
+
+          <div className="flex items-center space-x-2">
+            <Checkbox
+              id="revocable"
+              checked={revocable}
+              onCheckedChange={setRevocable}
+            />
+            <label htmlFor="revocable">Revokeable</label>
+          </div>
 
           <Input
             placeholder="Resolver address (optional)"
@@ -127,26 +143,20 @@ const EASSchemaGenerator = () => {
             onChange={(e) => setResolverAddress(e.target.value)}
           />
 
-          <div className="flex items-center space-x-2">
-            <input
-              type="checkbox"
-              checked={revocable}
-              onChange={(e) => setRevocable(e.target.checked)}
-              id="revocable"
-            />
-            <label htmlFor="revocable">Revocable</label>
-          </div>
-
-          <Button onClick={deploySchema}>Deploy Generated Schema</Button>
+          <Button
+            onClick={deploySchema}
+            disabled={deploymentState === "deploying"}
+            className="w-full"
+          >
+            {deploymentState === "deploying" ? "Deploying..." : "DEPLOY schema"}
+          </Button>
         </div>
       )}
 
-      {deploymentState === "deploying" && (
-        <Alert>
-          <AlertTitle>Deploying</AlertTitle>
-          <AlertDescription>
-            Deploying your schema. This may take a few moments...
-          </AlertDescription>
+      {deploymentState === "error" && (
+        <Alert variant="destructive">
+          <AlertTitle>Error</AlertTitle>
+          <AlertDescription>{errorMessage}</AlertDescription>
         </Alert>
       )}
 
@@ -166,13 +176,6 @@ const EASSchemaGenerator = () => {
               </a>
             </div>
           </AlertDescription>
-        </Alert>
-      )}
-
-      {deploymentState === "error" && (
-        <Alert variant="destructive">
-          <AlertTitle>Error</AlertTitle>
-          <AlertDescription>{errorMessage}</AlertDescription>
         </Alert>
       )}
     </div>
