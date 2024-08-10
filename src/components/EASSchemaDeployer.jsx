@@ -67,7 +67,7 @@ const EASSchemaGenerator = () => {
       console.log("Waiting for transaction confirmation...");
       const receipt = await transaction.wait();
       console.log("Transaction receipt:", receipt);
-      setTransactionHash(receipt.transactionHash);
+      setTransactionHash(receipt);
 
       setDeploymentState("success");
     } catch (error) {
